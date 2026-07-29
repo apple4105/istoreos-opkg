@@ -86,7 +86,7 @@ jobs:
 
       - name: Install usign and sign feed
         env:
-          OPKG_SECRET: ${{ secrets.istoreos_opkg }}
+          OPKG_SECRET: ${{ secrets.ISTOREOS_OPKG }}
         run: |
           # 1. 安装 OpenWrt 专用的 usign 签名工具
           sudo apt-get update && sudo apt-get install -y usign
