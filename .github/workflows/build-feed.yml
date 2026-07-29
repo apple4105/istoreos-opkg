@@ -127,7 +127,7 @@ jobs:
           fi
           cd public
           printf "%s\n" "$OPKG_SECRET" > secret.key
-          usign -S -m Packages.gz -s secret.key -x Packages.sig
+          usign -S -m Packages -s secret.key -x Packages.sig
           rm -f secret.key
 
       - name: Deploy to GitHub Pages
