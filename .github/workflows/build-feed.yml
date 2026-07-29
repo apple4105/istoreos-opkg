@@ -116,17 +116,52 @@ jobs:
           done
           # ==============================================================
 
-          # 生成包索引（指定 openwrt-23.05 分支获取脚本，避开已切换 apk-tools 的 main 分支）
-          wget -q https://raw.githubusercontent.com/openwrt/openwrt/openwrt-23.05/scripts/opkg-make-index.pl -O opkg-make-index.pl || \
-          wget -q https://raw.githubusercontent.com/openwrt/openwrt/openwrt-24.10/scripts/opkg-make-index.pl -O opkg-make-index.pl || true
+          # 生成包索引：优先双源网络拉取 Perl 脚本，若失败则无缝切入内置 Python 索引生成器
+          wget -q https://raw.githubusercontent.com/openwrt/openwrt/v22.03.5/scripts/opkg-make-index.pl -O opkg-make-index.pl || \
+          wget -q https://git.openwrt.org/?p=openwrt/openwrt.git;a=blob_plain;f=scripts/opkg-make-index.pl;hb=v22.03.5 -O opkg-make-index.pl || true
 
           if [ -s opkg-make-index.pl ]; then
+            echo "Using opkg-make-index.pl to build Packages index..."
             chmod +x opkg-make-index.pl
             ./opkg-make-index.pl . > Packages
             rm -f opkg-make-index.pl
           else
-            echo "Error: Failed to fetch opkg-make-index.pl"
-            exit 1
+            echo "Notice: opkg-make-index.pl download failed. Falling back to built-in Python indexer..."
+            python3 -c "
+import os, tarfile, io, hashlib
+
+entries = []
+for filename in sorted(os.listdir('.')):
+    if not filename.endswith('.ipk'):
+        continue
+    filepath = filename
+    size = os.path.getsize(filepath)
+    with open(filepath, 'rb') as f:
+        content = f.read()
+        md5 = hashlib.md5(content).hexdigest()
+        sha256 = hashlib.sha256(content).hexdigest()
+    control_text = ''
+    try:
+        with tarfile.open(filepath, 'r:*') as outer:
+            for m in outer.getmembers():
+                if 'control.tar' in m.name:
+                    ctrl_bytes = outer.extractfile(m).read()
+                    with tarfile.open(fileobj=io.BytesIO(ctrl_bytes), mode='r:*') as inner:
+                        for im in inner.getmembers():
+                            if im.name in ['./control', 'control']:
+                                control_text = inner.extractfile(im).read().decode('utf-8', errors='ignore').strip()
+                                break
+                    break
+    except Exception as e:
+        print(f'Warning: {filename}: {e}')
+        continue
+    if control_text:
+        entry = f'{control_text}\nFilename: ./{filename}\nSize: {size}\nMD5Sum: {md5}\nSHA256sum: {sha256}\n'
+        entries.append(entry)
+
+with open('Packages', 'w', encoding='utf-8') as f:
+    f.write('\n'.join(entries) + '\n')
+"
           fi
 
           # 防错校验：确保 Packages 成功生成且非空
