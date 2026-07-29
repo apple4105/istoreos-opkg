@@ -16,10 +16,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install dependencies and build usign
         run: |
           sudo apt-get update
-          sudo apt-get install -y perl python3 gzip wget jq unzip
+          sudo apt-get install -y perl python3 gzip wget jq unzip cmake build-essential
+          
+          # 在临时目录编译并安装 usign，避免污染工作区
+          git clone https://github.com/openwrt/usign.git /tmp/usign
+          cd /tmp/usign && cmake . && make && sudo cp usign /usr/local/bin/
 
       - name: Download IPKs and Build Combined Index
         env:
@@ -84,20 +88,17 @@ jobs:
             exit 1
           fi
 
-      - name: Install usign and sign feed
+      - name: Sign Feed Index
         env:
-          OPKG_SECRET: ${{ secrets.ISTOREOS_OPKG }}
+          OPKG_SECRET: ${{ secrets.istoreos-opkg }}
         run: |
-          # 1. 安装 OpenWrt 专用的 usign 签名工具
-          sudo apt-get update && sudo apt-get install -y usign
-
-          # 2. 写入私钥
+          if [ -z "$OPKG_SECRET" ]; then
+            echo "Error: OPKG_SECRET_KEY is empty! Please verify repository Secrets."
+            exit 1
+          fi
+          cd public
           echo "$OPKG_SECRET" > secret.key
-
-          # 3. 对 Packages.gz 进行签名，生成 Packages.sig
           usign -S -m Packages.gz -s secret.key -x Packages.sig
-
-          # 4. 删除临时私钥
           rm -f secret.key
 
       - name: Deploy to GitHub Pages
