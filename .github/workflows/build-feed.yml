@@ -2,10 +2,10 @@ name: Build Custom OPKG Feed (SmartDNS + Passwall)
 
 on:
   push:
-    branches: [ main, master ] # 代码提交或保存时自动触发运行
+    branches: [ main, master ]
   schedule:
-    - cron: '0 2 * * *' # 每天北京时间 10:00 自动更新
-  workflow_dispatch: # 支持手动一键触发
+    - cron: '0 2 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -21,9 +21,8 @@ jobs:
       - name: Install dependencies and build usign
         run: |
           sudo apt-get update
-          sudo apt-get install -y perl python3 gzip wget jq unzip cmake build-essential
+          sudo apt-get install -y perl python3 gzip wget jq unzip cmake build-essential file
           
-          # 在临时目录编译并安装 usign
           git clone https://github.com/openwrt/usign.git /tmp/usign
           cd /tmp/usign && cmake . && make && sudo cp usign /usr/local/bin/
 
@@ -36,25 +35,23 @@ jobs:
 
           download_latest_release() {
             local repo=$1
-            echo "=========================================="
             echo "Fetching latest release from: $repo"
-            echo "=========================================="
             
             RELEASE_DATA=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$repo/releases/latest")
             
-            # 1. 下载 .ipk 文件
+            # 下载 .ipk
             echo "$RELEASE_DATA" | jq -r '.assets[]? | select(.name != null and (.name | endswith(".ipk"))) | .browser_download_url // empty' | while read -r url; do
               if [[ "$url" =~ ^https?:// ]]; then
                 echo "Downloading IPK: $url"
-                wget -q "$url" || echo "Warning: Failed to download $url"
+                wget -q -c "$url" || true
               fi
             done
 
-            # 2. 下载并解压 .zip 压缩包
+            # 下载 .zip
             echo "$RELEASE_DATA" | jq -r '.assets[]? | select(.name != null and (.name | endswith(".zip"))) | .browser_download_url // empty' | while read -r url; do
               if [[ "$url" =~ ^https?:// ]]; then
                 echo "Downloading ZIP archive: $url"
-                wget -q "$url" -O temp.zip || echo "Warning: Failed to download $url"
+                wget -q -c "$url" -O temp.zip || true
                 if [ -f temp.zip ]; then
                   unzip -o -q temp.zip || true
                   rm -f temp.zip
@@ -63,38 +60,35 @@ jobs:
             done
           }
 
-          # 【项目 1】SmartDNS 官方源
           download_latest_release "pymumu/smartdns"
-
-          # 【项目 2】Passwall 官方主程序
           download_latest_release "Openwrt-Passwall/openwrt-passwall"
-
-          # 【项目 3】Passwall 预编译依赖核心库
           download_latest_release "moetayuko/openwrt-passwall-build"
 
-          # 展平目录：把所有子文件夹里的 ipk 抽到当前根目录
+          # 展平子目录
           find . -mindepth 2 -type f -name "*.ipk" -exec mv {} . \; 2>/dev/null || true
 
-          # ================= 【1. 精简与架构过滤：目标 x86_64】 =================
-          TARGET_ARCH="x86_64"
-          echo "Cleaning up non-x86_64 architectures..."
+          # 【严格校验】校验并清理所有非真实包的文件（防止把 HTML 错误页当成 IPK 索引）
+          for f in *.ipk; do
+            [ -e "$f" ] || continue
+            if ! file "$f" | grep -E -q "Debian binary package|POSIX tar archive|gzip compressed data"; then
+              echo "Warning: Invalid IPK detected (corrupted or HTML error), removing: $f"
+              rm -f "$f"
+            fi
+          done
 
-          # 清除非中文语言包（仅保留 zh-cn）
+          # 过滤架构与适配 iStoreOS
+          TARGET_ARCH="x86_64"
           find . -name "luci-i18n-*" ! -name "*zh-cn*" -type f -delete || true
 
-          # 剔除其他 CPU 架构包（保留 x86_64 与 _all.ipk 通用包）
           for file in *.ipk; do
             [ -e "$file" ] || continue
             if [[ "$file" =~ (\.all|\_all) ]]; then continue; fi
             if [[ "$file" == *"$TARGET_ARCH"* ]]; then continue; fi
             if [[ "$file" =~ (aarch64|mips|arm_cortex|i386|riscv) ]]; then
-              echo "Deleting non-x86_64 IPK: $file"
               rm -f "$file"
             fi
           done
 
-          # ================= 【2. Passwall 版本适配：目标 iStoreOS 24.10】 =================
-          echo "Cleaning up Passwall versions for iStoreOS 24.10..."
           find . -type f -name "*.apk" -delete || true
           find . -type f -name "22.03-*" -delete || true
 
@@ -126,7 +120,7 @@ jobs:
           if os.path.exists('Packages') and os.path.getsize('Packages') > 0:
               print("Packages index already created successfully by Perl script.")
           else:
-              print("Notice: opkg-make-index.pl unavailable. Running native Python indexer...")
+              print("Notice: opkg-make-index.pl unavailable. Running Python indexer...")
               entries = []
               for filename in sorted(os.listdir('.')):
                   if not filename.endswith('.ipk'):
@@ -159,7 +153,7 @@ jobs:
               with open('Packages', 'w', encoding='utf-8') as f:
                   f.write('\n\n'.join(entries) + '\n')
 
-      - name: Compress and Sign Feed Index
+      - name: Format, Compress and Sign Feed Index
         env:
           OPKG_SECRET: ${{ secrets.ISTOREOS_OPKG }}
         run: |
@@ -168,6 +162,9 @@ jobs:
             echo "Error: Packages file does not exist or is empty!"
             exit 1
           fi
+
+          # 规范化：强制去除 \r 回车符，确保是纯 Unix 格式文本
+          tr -d '\r' < Packages > Packages.tmp && mv Packages.tmp Packages
 
           gzip -9 -c Packages > Packages.gz
 
