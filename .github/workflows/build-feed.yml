@@ -57,8 +57,11 @@ jobs:
           # 【项目 1】SmartDNS 官方源
           download_latest_release "pymumu/smartdns"
 
-          # 【项目 2】Passwall 源
-          download_latest_release "moetayuko/openwrt-passwall-build"
+          # 【项目 2】Passwall 官方主程序与 LuCI 界面
+          download_latest_release "Openwrt-Passwall/openwrt-passwall"
+
+          # 【项目 3】Passwall 官方核心依赖包 (Xray, Sing-box, ChinaDNS-NG 等)
+          download_latest_release "Openwrt-Passwall/openwrt-passwall-packages"
 
           # 整理目录：将嵌套子文件夹里的 ipk 统一移到根目录
           find . -mindepth 2 -type f -name "*.ipk" -exec mv {} . \;
