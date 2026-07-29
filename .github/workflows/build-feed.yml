@@ -39,7 +39,7 @@ jobs:
             
             RELEASE_DATA=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$repo/releases/latest")
             
-            # 下载 .ipk
+            # 下载 .ipk 文件
             echo "$RELEASE_DATA" | jq -r '.assets[]? | select(.name != null and (.name | endswith(".ipk"))) | .browser_download_url // empty' | while read -r url; do
               if [[ "$url" =~ ^https?:// ]]; then
                 echo "Downloading IPK: $url"
@@ -47,7 +47,7 @@ jobs:
               fi
             done
 
-            # 下载 .zip
+            # 下载 .zip 文件
             echo "$RELEASE_DATA" | jq -r '.assets[]? | select(.name != null and (.name | endswith(".zip"))) | .browser_download_url // empty' | while read -r url; do
               if [[ "$url" =~ ^https?:// ]]; then
                 echo "Downloading ZIP archive: $url"
@@ -67,36 +67,39 @@ jobs:
           # 展平子目录
           find . -mindepth 2 -type f -name "*.ipk" -exec mv {} . \; 2>/dev/null || true
 
-          # 【严格校验】校验并清理所有非真实包的文件（防止把 HTML 错误页当成 IPK 索引）
+          # ================= 【SmartDNS & Passwall 垃圾包精准清洗】 =================
+          
+          # 1. 删除非 OpenWrt 系统的 Optware 包和 Lite 简化版界面
+          find . -name "*optware*" -type f -delete || true
+          find . -name "*smartdns-lite*" -type f -delete || true
+          find . -name "*luci-compat*" -type f -delete || true
+
+          # 2. 强行抹除所有非 x86_64 架构（防止 SmartDNS 的 -all.ipk 后缀误导脚本）
+          for arch in aarch64 arm mips mipsel riscv i386 x86-openwrt; do
+            find . -name "*${arch}*" -type f -delete || true
+          done
+
+          # 3. 校验并删除非标准 IPK 压缩包
           for f in *.ipk; do
             [ -e "$f" ] || continue
             if ! file "$f" | grep -E -q "Debian binary package|POSIX tar archive|gzip compressed data"; then
-              echo "Warning: Invalid IPK detected (corrupted or HTML error), removing: $f"
+              echo "Removing invalid IPK: $f"
               rm -f "$f"
             fi
           done
 
-          # 过滤架构与适配 iStoreOS
-          TARGET_ARCH="x86_64"
+          # 4. 剔除非中文语言包与 22.03 旧界面
           find . -name "luci-i18n-*" ! -name "*zh-cn*" -type f -delete || true
-
-          for file in *.ipk; do
-            [ -e "$file" ] || continue
-            if [[ "$file" =~ (\.all|\_all) ]]; then continue; fi
-            if [[ "$file" == *"$TARGET_ARCH"* ]]; then continue; fi
-            if [[ "$file" =~ (aarch64|mips|arm_cortex|i386|riscv) ]]; then
-              rm -f "$file"
-            fi
-          done
-
           find . -type f -name "*.apk" -delete || true
           find . -type f -name "22.03-*" -delete || true
 
+          # 5. 剥离 23.05-24.10 前缀
           for f in 23.05-24.10_*; do
             if [ -f "$f" ]; then
               mv "$f" "${f#23.05-24.10_}"
             fi
           done
+          # =========================================================================
 
       - name: Build Index (Perl)
         run: |
@@ -118,9 +121,9 @@ jobs:
 
           os.chdir('public')
           if os.path.exists('Packages') and os.path.getsize('Packages') > 0:
-              print("Packages index already created successfully by Perl script.")
+              print("Packages index created successfully by Perl script.")
           else:
-              print("Notice: opkg-make-index.pl unavailable. Running Python indexer...")
+              print("Running Python indexer...")
               entries = []
               for filename in sorted(os.listdir('.')):
                   if not filename.endswith('.ipk'):
@@ -153,23 +156,43 @@ jobs:
               with open('Packages', 'w', encoding='utf-8') as f:
                   f.write('\n\n'.join(entries) + '\n')
 
-      - name: Format, Compress and Sign Feed Index
+      - name: Sanitize Packages Index (Fix Segfault Cause)
+        shell: python
+        run: |
+          import os
+
+          os.chdir('public')
+          if not os.path.exists('Packages'):
+              print("Error: Packages file missing!")
+              exit(1)
+
+          with open('Packages', 'r', encoding='utf-8', errors='ignore') as f:
+              lines = f.readlines()
+
+          cleaned = []
+          for line in lines:
+              line = line.rstrip('\r\n')
+              if not line.strip():
+                  cleaned.append('')
+                  continue
+              if ':' in line or line.startswith(' ') or line.startswith('\t'):
+                  cleaned.append(line)
+              else:
+                  cleaned.append(' ' + line)
+
+          with open('Packages', 'w', encoding='utf-8') as f:
+              f.write('\n'.join(cleaned) + '\n')
+          print("Packages index successfully sanitized for opkg C parser!")
+
+      - name: Compress and Sign Feed Index
         env:
           OPKG_SECRET: ${{ secrets.ISTOREOS_OPKG }}
         run: |
           cd public
-          if [ ! -s Packages ]; then
-            echo "Error: Packages file does not exist or is empty!"
-            exit 1
-          fi
-
-          # 规范化：强制去除 \r 回车符，确保是纯 Unix 格式文本
-          tr -d '\r' < Packages > Packages.tmp && mv Packages.tmp Packages
-
           gzip -9 -c Packages > Packages.gz
 
           if [ -z "$OPKG_SECRET" ]; then
-            echo "Error: OPKG_SECRET is empty! Please verify repository Secrets."
+            echo "Error: OPKG_SECRET is empty!"
             exit 1
           fi
 
