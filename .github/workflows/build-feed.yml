@@ -79,7 +79,7 @@ jobs:
           echo "Cleaning up non-x86_64 architectures and redundant translation packages..."
 
           # 清除非中文语言包（仅保留 zh-cn）
-          find . -name "luci-i18n-*" ! -name "*zh-cn*" -type f -delete
+          find . -name "luci-i18n-*" ! -name "*zh-cn*" -type f -delete || true
 
           # 剔除其他 CPU 架构包（保留 x86_64 与 _all.ipk 通用包）
           for file in *.ipk; do
@@ -103,14 +103,16 @@ jobs:
           echo "Cleaning up Passwall versions for iStoreOS 24.10..."
 
           # 删除所有 .apk 文件（24.10 依然使用 opkg，无法解析 apk）
-          find . -type f -name "*.apk" -delete
+          find . -type f -name "*.apk" -delete || true
 
           # 删除旧版 OpenWrt 22.03 版本的包（与 24.10 的 JS 界面不兼容）
-          find . -type f -name "22.03-*" -delete
+          find . -type f -name "22.03-*" -delete || true
 
-          # 剥离文件名开头的 "23.05-24.10_" 前缀，恢复规范包名
+          # 剥离文件名开头的 "23.05-24.10_" 前缀，采用安全 if 语法
           for f in 23.05-24.10_*; do
-            [ -e "$f" ] && mv "$f" "${f#23.05-24.10_}"
+            if [ -f "$f" ]; then
+              mv "$f" "${f#23.05-24.10_}"
+            fi
           done
           # ==============================================================
 
@@ -133,13 +135,13 @@ jobs:
           OPKG_SECRET: ${{ secrets.ISTOREOS_OPKG }}
         run: |
           if [ -z "$OPKG_SECRET" ]; then
-            echo "Error: OPKG_SECRET_KEY is empty! Please verify repository Secrets."
+            echo "Error: OPKG_SECRET is empty! Please verify repository Secrets."
             exit 1
           fi
           cd public
           
           # 过滤换行符并处理 key 格式
-          echo "$OPKG_SECRET" | tr -d '\r' > secret.key
+          printf "%s\n" "$OPKG_SECRET" | tr -d '\r' > secret.key
           if ! grep -q "untrusted comment" secret.key; then
             echo "untrusted comment: secret key" > temp.key
             cat secret.key >> temp.key
