@@ -74,32 +74,43 @@ jobs:
           # 展平目录：把所有子文件夹里的 ipk 抽到当前根目录
           find . -mindepth 2 -type f -name "*.ipk" -exec mv {} . \; 2>/dev/null || true
 
-          # ================= 【精简与架构过滤：目标 x86_64】 =================
+          # ================= 【1. 精简与架构过滤：目标 x86_64】 =================
           TARGET_ARCH="x86_64"
           echo "Cleaning up non-x86_64 architectures and redundant translation packages..."
 
-          # 1. 彻底清除非中文语言包（仅保留 zh-cn）
+          # 清除非中文语言包（仅保留 zh-cn）
           find . -name "luci-i18n-*" ! -name "*zh-cn*" -type f -delete
 
-          # 2. 剔除其他 CPU 架构包（保留 x86_64 与 _all.ipk 通用包）
+          # 剔除其他 CPU 架构包（保留 x86_64 与 _all.ipk 通用包）
           for file in *.ipk; do
             [ -e "$file" ] || continue
             
-            # 通用脚本/界面包必留
             if [[ "$file" =~ (\.all|\_all) ]]; then
               continue
             fi
 
-            # 命中 x86_64 目标架构留用
             if [[ "$file" == *"$TARGET_ARCH"* ]]; then
               continue
             fi
 
-            # 匹配到 ARM/MIPS/i386 等架构直接删掉
             if [[ "$file" =~ (aarch64|mips|arm_cortex|i386|riscv) ]]; then
               echo "Deleting non-x86_64 IPK: $file"
               rm -f "$file"
             fi
+          done
+
+          # ================= 【2. Passwall 版本适配：目标 iStoreOS 24.10】 =================
+          echo "Cleaning up Passwall versions for iStoreOS 24.10..."
+
+          # 删除所有 .apk 文件（24.10 依然使用 opkg，无法解析 apk）
+          find . -type f -name "*.apk" -delete
+
+          # 删除旧版 OpenWrt 22.03 版本的包（与 24.10 的 JS 界面不兼容）
+          find . -type f -name "22.03-*" -delete
+
+          # 剥离文件名开头的 "23.05-24.10_" 前缀，恢复规范包名
+          for f in 23.05-24.10_*; do
+            [ -e "$f" ] && mv "$f" "${f#23.05-24.10_}"
           done
           # ==============================================================
 
@@ -126,7 +137,16 @@ jobs:
             exit 1
           fi
           cd public
-          printf "%s\n" "$OPKG_SECRET" > secret.key
+          
+          # 过滤换行符并处理 key 格式
+          echo "$OPKG_SECRET" | tr -d '\r' > secret.key
+          if ! grep -q "untrusted comment" secret.key; then
+            echo "untrusted comment: secret key" > temp.key
+            cat secret.key >> temp.key
+            mv temp.key secret.key
+          fi
+
+          # 对解压后的 Packages 文本签名
           usign -S -m Packages -s secret.key -x Packages.sig
           rm -f secret.key
 
