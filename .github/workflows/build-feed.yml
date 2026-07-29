@@ -108,7 +108,7 @@ jobs:
           # 删除旧版 OpenWrt 22.03 版本的包（与 24.10 的 JS 界面不兼容）
           find . -type f -name "22.03-*" -delete || true
 
-          # 剥离文件名开头的 "23.05-24.10_" 前缀，采用安全 if 语法
+          # 剥离文件名开头的 "23.05-24.10_" 前缀
           for f in 23.05-24.10_*; do
             if [ -f "$f" ]; then
               mv "$f" "${f#23.05-24.10_}"
@@ -116,19 +116,26 @@ jobs:
           done
           # ==============================================================
 
-          # 生成包索引
-          wget -q https://raw.githubusercontent.com/openwrt/openwrt/main/scripts/opkg-make-index.pl -O opkg-make-index.pl || \
-          wget -q https://raw.githubusercontent.com/openwrt/openwrt/master/scripts/opkg-make-index.pl -O opkg-make-index.pl || true
+          # 生成包索引（指定 openwrt-23.05 分支获取脚本，避开已切换 apk-tools 的 main 分支）
+          wget -q https://raw.githubusercontent.com/openwrt/openwrt/openwrt-23.05/scripts/opkg-make-index.pl -O opkg-make-index.pl || \
+          wget -q https://raw.githubusercontent.com/openwrt/openwrt/openwrt-24.10/scripts/opkg-make-index.pl -O opkg-make-index.pl || true
 
-          if [ -f opkg-make-index.pl ]; then
+          if [ -s opkg-make-index.pl ]; then
             chmod +x opkg-make-index.pl
             ./opkg-make-index.pl . > Packages
-            gzip -9 -c Packages > Packages.gz
             rm -f opkg-make-index.pl
           else
             echo "Error: Failed to fetch opkg-make-index.pl"
             exit 1
           fi
+
+          # 防错校验：确保 Packages 成功生成且非空
+          if [ ! -s Packages ]; then
+            echo "Error: Packages file is empty! No IPKs were indexed."
+            exit 1
+          fi
+
+          gzip -9 -c Packages > Packages.gz
 
       - name: Sign Feed Index
         env:
@@ -140,6 +147,11 @@ jobs:
           fi
           cd public
           
+          if [ ! -s Packages ]; then
+            echo "Error: Packages file does not exist or is empty."
+            exit 1
+          fi
+
           # 过滤换行符并处理 key 格式
           printf "%s\n" "$OPKG_SECRET" | tr -d '\r' > secret.key
           if ! grep -q "untrusted comment" secret.key; then
