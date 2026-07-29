@@ -2,7 +2,7 @@ name: Build Custom OPKG Feed (SmartDNS + Passwall)
 
 on:
   push:
-    branches: [ main, master ] # 只要推送到 main 或 master 分支就自动触发运行
+    branches: [ main, master ] # 保存/推送代码时自动触发
   schedule:
     - cron: '0 2 * * *' # 每天北京时间 10:00 自动更新
   workflow_dispatch: # 支持手动一键触发
@@ -10,9 +10,6 @@ on:
 permissions:
   contents: write
   pages: write
-
-
-
 
 jobs:
   build-feed:
@@ -121,7 +118,7 @@ jobs:
           done
           # ==============================================================
 
-          # 生成包索引：优先双源网络拉取 Perl 脚本，若失败则无缝切入内置 Python 索引生成器
+          # 生成包索引：优先网络拉取 Perl 脚本，失败则无缝切入本地 Python 脚本生成器
           wget -q https://raw.githubusercontent.com/openwrt/openwrt/v22.03.5/scripts/opkg-make-index.pl -O opkg-make-index.pl || \
           wget -q https://git.openwrt.org/?p=openwrt/openwrt.git;a=blob_plain;f=scripts/opkg-make-index.pl;hb=v22.03.5 -O opkg-make-index.pl || true
 
@@ -132,8 +129,11 @@ jobs:
             rm -f opkg-make-index.pl
           else
             echo "Notice: opkg-make-index.pl download failed. Falling back to built-in Python indexer..."
-            python3 -c "
-import os, tarfile, io, hashlib
+            cat << 'EOF' > make_index.py
+import os
+import tarfile
+import io
+import hashlib
 
 entries = []
 for filename in sorted(os.listdir('.')):
@@ -161,12 +161,14 @@ for filename in sorted(os.listdir('.')):
         print(f'Warning: {filename}: {e}')
         continue
     if control_text:
-        entry = f'{control_text}\nFilename: ./{filename}\nSize: {size}\nMD5Sum: {md5}\nSHA256sum: {sha256}\n'
+        entry = f"{control_text}\nFilename: ./{filename}\nSize: {size}\nMD5Sum: {md5}\nSHA256sum: {sha256}"
         entries.append(entry)
 
 with open('Packages', 'w', encoding='utf-8') as f:
-    f.write('\n'.join(entries) + '\n')
-"
+    f.write('\n\n'.join(entries) + '\n')
+EOF
+            python3 make_index.py
+            rm -f make_index.py
           fi
 
           # 防错校验：确保 Packages 成功生成且非空
