@@ -1,6 +1,8 @@
 name: Build Custom OPKG Feed (SmartDNS + Passwall)
 
 on:
+  push:
+    branches: [ main, master ] # 只要推送到 main 或 master 分支就自动触发运行
   schedule:
     - cron: '0 2 * * *' # 每天北京时间 10:00 自动更新
   workflow_dispatch: # 支持手动一键触发
@@ -8,6 +10,7 @@ on:
 permissions:
   contents: write
   pages: write
+
 
 jobs:
   build-feed:
