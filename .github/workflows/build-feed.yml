@@ -21,18 +21,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y perl python3 gzip wget jq unzip cmake build-essential
           
-          # 在临时目录编译并安装 usign，避免污染工作区
+          # 在临时目录编译并安装 usign，彻底隔绝工作区污染
           git clone https://github.com/openwrt/usign.git /tmp/usign
           cd /tmp/usign && cmake . && make && sudo cp usign /usr/local/bin/
 
-      - name: Download IPKs and Build Combined Index
+      - name: Download IPKs, Filter Arch & Build Combined Index
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p public
           cd public
 
-          # 通用下载函数：严格校验 URL 格式，彻底避免空值报错
+          # 通用下载函数：校验链接防报错
           download_latest_release() {
             local repo=$1
             echo "=========================================="
@@ -41,7 +41,7 @@ jobs:
             
             RELEASE_DATA=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$repo/releases/latest")
             
-            # 1. 提取并下载 .ipk 文件 (过滤 null 与非 http 链接)
+            # 1. 下载 .ipk 文件
             echo "$RELEASE_DATA" | jq -r '.assets[]? | select(.name != null and (.name | endswith(".ipk"))) | .browser_download_url // empty' | while read -r url; do
               if [[ "$url" =~ ^https?:// ]]; then
                 echo "Downloading IPK: $url"
@@ -49,7 +49,7 @@ jobs:
               fi
             done
 
-            # 2. 提取并下载 .zip 压缩包
+            # 2. 下载并解压 .zip 压缩包
             echo "$RELEASE_DATA" | jq -r '.assets[]? | select(.name != null and (.name | endswith(".zip"))) | .browser_download_url // empty' | while read -r url; do
               if [[ "$url" =~ ^https?:// ]]; then
                 echo "Downloading ZIP archive: $url"
@@ -71,10 +71,39 @@ jobs:
           # 【项目 3】Passwall 预编译依赖核心库
           download_latest_release "moetayuko/openwrt-passwall-build"
 
-          # 整理目录：将嵌套子文件夹里的 ipk 统一移到根目录
+          # 展平目录：把所有子文件夹里的 ipk 抽到当前根目录
           find . -mindepth 2 -type f -name "*.ipk" -exec mv {} . \; 2>/dev/null || true
 
-          # 3. 下载索引生成脚本（增加 main/master 双分支备用，防止 404）
+          # ================= 【精简与架构过滤：目标 x86_64】 =================
+          TARGET_ARCH="x86_64"
+          echo "Cleaning up non-x86_64 architectures and redundant translation packages..."
+
+          # 1. 彻底清除非中文语言包（仅保留 zh-cn）
+          find . -name "luci-i18n-*" ! -name "*zh-cn*" -type f -delete
+
+          # 2. 剔除其他 CPU 架构包（保留 x86_64 与 _all.ipk 通用包）
+          for file in *.ipk; do
+            [ -e "$file" ] || continue
+            
+            # 通用脚本/界面包必留
+            if [[ "$file" =~ (\.all|\_all) ]]; then
+              continue
+            fi
+
+            # 命中 x86_64 目标架构留用
+            if [[ "$file" == *"$TARGET_ARCH"* ]]; then
+              continue
+            fi
+
+            # 匹配到 ARM/MIPS/i386 等架构直接删掉
+            if [[ "$file" =~ (aarch64|mips|arm_cortex|i386|riscv) ]]; then
+              echo "Deleting non-x86_64 IPK: $file"
+              rm -f "$file"
+            fi
+          done
+          # ==============================================================
+
+          # 生成包索引
           wget -q https://raw.githubusercontent.com/openwrt/openwrt/main/scripts/opkg-make-index.pl -O opkg-make-index.pl || \
           wget -q https://raw.githubusercontent.com/openwrt/openwrt/master/scripts/opkg-make-index.pl -O opkg-make-index.pl || true
 
@@ -97,7 +126,7 @@ jobs:
             exit 1
           fi
           cd public
-          echo "$OPKG_SECRET" > secret.key
+          printf "%s\n" "$OPKG_SECRET" > secret.key
           usign -S -m Packages.gz -s secret.key -x Packages.sig
           rm -f secret.key
 
