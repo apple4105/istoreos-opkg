@@ -1,0 +1,80 @@
+name: Build Custom OPKG Feed (SmartDNS + Passwall)
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # 每天北京时间 10:00 自动更新
+  workflow_dispatch: # 支持手动一键触发
+
+permissions:
+  contents: write
+  pages: write
+
+jobs:
+  build-feed:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y perl python3 gzip wget jq unzip
+
+      - name: Download IPKs and Build Combined Index
+        run: |
+          mkdir -p public
+          cd public
+
+          # 通用下载函数：抓取指定 GitHub Repo 最新 Release 中的 ipk 与 zip
+          download_latest_release() {
+            local repo=$1
+            echo "=========================================="
+            echo "Fetching latest release from: $repo"
+            echo "=========================================="
+            
+            RELEASE_DATA=$(curl -s "https://api.github.com/repos/$repo/releases/latest")
+            
+            # 1. 下载散落的 .ipk 包
+            echo "$RELEASE_DATA" | jq -r '.assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | while read -r url; do
+              if [ -n "$url" ]; then
+                echo "Downloading IPK: $url"
+                wget -q "$url"
+              fi
+            done
+
+            # 2. 下载并解压 .zip 压缩包
+            echo "$RELEASE_DATA" | jq -r '.assets[]? | select(.name | endswith(".zip")) | .browser_download_url' | while read -r url; do
+              if [ -n "$url" ]; then
+                echo "Downloading ZIP archive: $url"
+                wget -q "$url" -O temp.zip
+                unzip -o -q temp.zip
+                rm temp.zip
+              fi
+            done
+          }
+
+          # 【项目 1】SmartDNS 官方源
+          download_latest_release "pymumu/smartdns"
+
+          # 【项目 2】Passwall 源
+          download_latest_release "moetayuko/openwrt-passwall-build"
+
+          # 整理目录：将嵌套子文件夹里的 ipk 统一移到根目录
+          find . -mindepth 2 -type f -name "*.ipk" -exec mv {} . \;
+
+          # 3. 生成统一的 OPKG 索引
+          wget -q https://raw.githubusercontent.com/openwrt/openwrt/master/scripts/opkg-make-index.pl -O opkg-make-index.pl
+          chmod +x opkg-make-index.pl
+
+          ./opkg-make-index.pl . > Packages
+          gzip -9 -c Packages > Packages.gz
+
+          # 清理临时脚本
+          rm opkg-make-index.pl
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
