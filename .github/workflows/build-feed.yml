@@ -28,29 +28,28 @@ jobs:
           mkdir -p public
           cd public
 
-          # 通用下载函数：带 GITHUB_TOKEN 鉴权与防崩溃下载
+          # 通用下载函数：严格校验 URL 格式，彻底避免空值报错
           download_latest_release() {
             local repo=$1
             echo "=========================================="
             echo "Fetching latest release from: $repo"
             echo "=========================================="
             
-            # 使用 GH_TOKEN 避免 403 Rate Limit
             RELEASE_DATA=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$repo/releases/latest")
             
-            # 1. 下载散落的 .ipk 包 (失败时不中断脚本)
-            echo "$RELEASE_DATA" | jq -r '.assets[]? | select(.name | endswith(".ipk")) | .browser_download_url' | while read -r url; do
-              if [ -n "$url" ]; then
+            # 1. 提取并下载 .ipk 文件 (过滤 null 与非 http 链接)
+            echo "$RELEASE_DATA" | jq -r '.assets[]? | select(.name != null and (.name | endswith(".ipk"))) | .browser_download_url // empty' | while read -r url; do
+              if [[ "$url" =~ ^https?:// ]]; then
                 echo "Downloading IPK: $url"
-                wget -q "$url" || true
+                wget -q "$url" || echo "Warning: Failed to download $url"
               fi
             done
 
-            # 2. 下载并解压 .zip 压缩包
-            echo "$RELEASE_DATA" | jq -r '.assets[]? | select(.name | endswith(".zip")) | .browser_download_url' | while read -r url; do
-              if [ -n "$url" ]; then
+            # 2. 提取并下载 .zip 压缩包
+            echo "$RELEASE_DATA" | jq -r '.assets[]? | select(.name != null and (.name | endswith(".zip"))) | .browser_download_url // empty' | while read -r url; do
+              if [[ "$url" =~ ^https?:// ]]; then
                 echo "Downloading ZIP archive: $url"
-                wget -q "$url" -O temp.zip || true
+                wget -q "$url" -O temp.zip || echo "Warning: Failed to download $url"
                 if [ -f temp.zip ]; then
                   unzip -o -q temp.zip || true
                   rm -f temp.zip
@@ -65,21 +64,25 @@ jobs:
           # 【项目 2】Passwall 官方主程序
           download_latest_release "Openwrt-Passwall/openwrt-passwall"
 
-          # 【项目 3】Passwall 预编译依赖核心库 (Xray, Sing-box 等)
+          # 【项目 3】Passwall 预编译依赖核心库
           download_latest_release "moetayuko/openwrt-passwall-build"
 
           # 整理目录：将嵌套子文件夹里的 ipk 统一移到根目录
           find . -mindepth 2 -type f -name "*.ipk" -exec mv {} . \; 2>/dev/null || true
 
-          # 生成统一的 OPKG 索引
-          wget -q https://raw.githubusercontent.com/openwrt/openwrt/master/scripts/opkg-make-index.pl -O opkg-make-index.pl
-          chmod +x opkg-make-index.pl
+          # 3. 下载索引生成脚本（增加 main/master 双分支备用，防止 404）
+          wget -q https://raw.githubusercontent.com/openwrt/openwrt/main/scripts/opkg-make-index.pl -O opkg-make-index.pl || \
+          wget -q https://raw.githubusercontent.com/openwrt/openwrt/master/scripts/opkg-make-index.pl -O opkg-make-index.pl || true
 
-          ./opkg-make-index.pl . > Packages
-          gzip -9 -c Packages > Packages.gz
-
-          # 清理临时脚本
-          rm -f opkg-make-index.pl
+          if [ -f opkg-make-index.pl ]; then
+            chmod +x opkg-make-index.pl
+            ./opkg-make-index.pl . > Packages
+            gzip -9 -c Packages > Packages.gz
+            rm -f opkg-make-index.pl
+          else
+            echo "Error: Failed to fetch opkg-make-index.pl"
+            exit 1
+          fi
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
