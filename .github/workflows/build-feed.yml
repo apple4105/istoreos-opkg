@@ -84,6 +84,22 @@ jobs:
             exit 1
           fi
 
+      - name: Install usign and sign feed
+        env:
+          OPKG_SECRET: ${{ secrets.istoreos_opkg }}
+        run: |
+          # 1. 安装 OpenWrt 专用的 usign 签名工具
+          sudo apt-get update && sudo apt-get install -y usign
+
+          # 2. 写入私钥
+          echo "$OPKG_SECRET" > secret.key
+
+          # 3. 对 Packages.gz 进行签名，生成 Packages.sig
+          usign -S -m Packages.gz -s secret.key -x Packages.sig
+
+          # 4. 删除临时私钥
+          rm -f secret.key
+
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
