@@ -90,7 +90,7 @@ jobs:
 
       - name: Sign Feed Index
         env:
-          OPKG_SECRET: ${{ secrets.istoreos-opkg }}
+          OPKG_SECRET: ${{ secrets.ISTOREOS_OPKG }}
         run: |
           if [ -z "$OPKG_SECRET" ]; then
             echo "Error: OPKG_SECRET_KEY is empty! Please verify repository Secrets."
