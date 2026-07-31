@@ -161,14 +161,20 @@ jobs:
       - name: Build Index (Perl)
         run: |
           cd public
-          wget -q https://raw.githubusercontent.com/openwrt/openwrt/v22.03.5/scripts/opkg-make-index.pl -O opkg-make-index.pl || \
-          wget -q https://git.openwrt.org/?p=openwrt/openwrt.git;a=blob_plain;f=scripts/opkg-make-index.pl;hb=v22.03.5 -O opkg-make-index.pl || true
+          
+          # 给 URL 加上双引号防截断，并用括号包裹保障容错
+          (
+            wget -q --timeout=10 "https://raw.githubusercontent.com/openwrt/openwrt/v22.03.5/scripts/opkg-make-index.pl" -O opkg-make-index.pl || \
+            wget -q --timeout=10 "https://git.openwrt.org/?p=openwrt/openwrt.git;a=blob_plain;f=scripts/opkg-make-index.pl;hb=v22.03.5" -O opkg-make-index.pl
+          ) || true
 
           if [ -s opkg-make-index.pl ]; then
             echo "Using opkg-make-index.pl to build Packages index..."
             chmod +x opkg-make-index.pl
             ./opkg-make-index.pl . > Packages
             rm -f opkg-make-index.pl
+          else
+            echo "opkg-make-index.pl not found or empty, skipping Perl indexer."
           fi
 
       - name: Fallback Indexer (Python)
