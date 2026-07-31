@@ -162,17 +162,17 @@ jobs:
         run: |
           cd public
           
-          # 1. 下载脚本
-          curl -sSL "https://raw.githubusercontent.com/openwrt/openwrt/master/scripts/opkg-make-index.pl" -o opkg-make-index.pl || true
+          # 尝试下载 OpenWrt 官方索引脚本
+          curl -sSL "https://raw.githubusercontent.com/openwrt/openwrt/v22.03.5/scripts/opkg-make-index.pl" -o opkg-make-index.pl || true
 
-          # 2. 严格校验：确保文件存在，且不是 HTML 网页
-          if [ -s opkg-make-index.pl ] && ! head -n 2 opkg-make-index.pl | grep -iq "html"; then
+          # 终极校验：确保文件存在、非空，且第一行是以 "#!" 开头的合法脚本
+          if [ -s opkg-make-index.pl ] && head -n 1 opkg-make-index.pl | grep -q "^#!"; then
             echo "Successfully fetched opkg-make-index.pl. Building Packages index..."
             chmod +x opkg-make-index.pl
-            ./opkg-make-index.pl . > Packages
+            ./opkg-make-index.pl . > Packages || true
             rm -f opkg-make-index.pl
           else
-            echo "Downloaded file is invalid or an HTML page, skipping Perl indexer."
+            echo "opkg-make-index.pl is invalid or 404, skipping Perl indexer."
             rm -f opkg-make-index.pl
           fi
 
