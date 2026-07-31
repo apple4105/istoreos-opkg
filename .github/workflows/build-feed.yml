@@ -101,6 +101,63 @@ jobs:
           done
           # =========================================================================
 
+      # ====================================================
+      # 👇【新增步骤】自动解包修改 Passwall 的 app.sh 脚本并重包
+      # ====================================================
+      - name: Patch Passwall IPK
+        run: |
+          cd public
+          PASSWALL_IPK=""
+          for f in *passwall*.ipk; do
+            [ -f "$f" ] || continue
+            if tar -ztf "$f" 2>/dev/null | grep -q "app.sh"; then
+              PASSWALL_IPK="$f"
+              break
+            fi
+          done
+
+          if [ -n "$PASSWALL_IPK" ]; then
+            echo "正在修改 IPK 安装包: $PASSWALL_IPK"
+            
+            mkdir -p /tmp/ipk_extract
+            tar -xzf "$PASSWALL_IPK" -C /tmp/ipk_extract
+            
+            cd /tmp/ipk_extract
+            DATA_ARCHIVE=$(ls data.tar.*)
+            mkdir -p data_content
+            tar -xf "$DATA_ARCHIVE" -C data_content
+            
+            TARGET_FILE=$(find data_content -type f -path "*/passwall/app.sh")
+            
+            if [ -f "$TARGET_FILE" ]; then
+              echo "找到目标文件: $TARGET_FILE ，开始执行修改..."
+              
+              # 修改 1：将 local RUN_NEW_DNSMASQ=0 改为 1
+              sed -i 's/local RUN_NEW_DNSMASQ=0/local RUN_NEW_DNSMASQ=1/g' "$TARGET_FILE"
+              
+              # 修改 2：给 RUN_NEW_DNSMASQ=${DNS_REDIRECT} 前面加 # 注释
+              sed -i 's/RUN_NEW_DNSMASQ=\${DNS_REDIRECT}/# RUN_NEW_DNSMASQ=\${DNS_REDIRECT}/g' "$TARGET_FILE"
+              
+              echo "文件修改完成，校验修改后的内容："
+              grep "RUN_NEW_DNSMASQ" "$TARGET_FILE"
+            else
+              echo "警告：未找到 app.sh 文件，请检查包结构！"
+            fi
+            
+            cd data_content
+            tar -czf "../$DATA_ARCHIVE" .
+            cd ..
+            rm -rf data_content
+            
+            tar -czf "$GITHUB_WORKSPACE/public/$PASSWALL_IPK" debian-binary control.tar.gz "$DATA_ARCHIVE"
+            
+            cd $GITHUB_WORKSPACE
+            rm -rf /tmp/ipk_extract
+            echo "Passwall IPK 修改并重新打包完毕！"
+          else
+            echo "提示：未找到包含 app.sh 的 Passwall IPK 包，跳过修改步骤。"
+          fi
+
       - name: Build Index (Perl)
         run: |
           cd public
