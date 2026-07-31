@@ -104,26 +104,39 @@ jobs:
       # ====================================================
       # 👇【新增步骤】自动解包修改 Passwall 的 app.sh 脚本并重包
       # ====================================================
+      # ====================================================
+      # 👇 自动解包修改 Passwall 的 app.sh 脚本并重包（双层精准探测）
+      # ====================================================
       - name: Patch Passwall IPK
         run: |
           cd public
           PASSWALL_IPK=""
-          for f in *passwall*.ipk; do
+          
+          # 遍历所有 IPK，拆开第二层的 data.tar.* 寻找 app.sh
+          for f in *.ipk; do
             [ -f "$f" ] || continue
-            if tar -ztf "$f" 2>/dev/null | grep -q "app.sh"; then
-              PASSWALL_IPK="$f"
-              break
+            mkdir -p /tmp/check_ipk
+            if tar -xf "$f" -C /tmp/check_ipk 2>/dev/null; then
+              DATA_ARCH=$(ls /tmp/check_ipk/data.tar.* 2>/dev/null | head -n 1)
+              if [ -n "$DATA_ARCH" ]; then
+                if tar -tf "$DATA_ARCH" 2>/dev/null | grep -q "passwall/app.sh"; then
+                  PASSWALL_IPK="$f"
+                  rm -rf /tmp/check_ipk
+                  break
+                fi
+              fi
             fi
+            rm -rf /tmp/check_ipk
           done
 
           if [ -n "$PASSWALL_IPK" ]; then
-            echo "正在修改 IPK 安装包: $PASSWALL_IPK"
+            echo "精准找到包含 app.sh 的目标 IPK: $PASSWALL_IPK"
             
             mkdir -p /tmp/ipk_extract
-            tar -xzf "$PASSWALL_IPK" -C /tmp/ipk_extract
+            tar -xf "$PASSWALL_IPK" -C /tmp/ipk_extract
             
             cd /tmp/ipk_extract
-            DATA_ARCHIVE=$(ls data.tar.*)
+            DATA_ARCHIVE=$(ls data.tar.* | head -n 1)
             mkdir -p data_content
             tar -xf "$DATA_ARCHIVE" -C data_content
             
@@ -139,23 +152,33 @@ jobs:
               sed -i 's/RUN_NEW_DNSMASQ=\${DNS_REDIRECT}/# RUN_NEW_DNSMASQ=\${DNS_REDIRECT}/g' "$TARGET_FILE"
               
               echo "文件修改完成，校验修改后的内容："
-              grep "RUN_NEW_DNSMASQ" "$TARGET_FILE"
+              grep "RUN_NEW_DNSMASQ" "$TARGET_FILE" || true
             else
-              echo "警告：未找到 app.sh 文件，请检查包结构！"
+              echo "警告：未找到 app.sh 文件！"
             fi
             
+            # 保持原格式重新打包 data.tar.*
             cd data_content
-            tar -czf "../$DATA_ARCHIVE" .
+            if [[ "$DATA_ARCHIVE" == *.gz ]]; then
+              tar -czf "../$DATA_ARCHIVE" .
+            elif [[ "$DATA_ARCHIVE" == *.xz ]]; then
+              tar -cJf "../$DATA_ARCHIVE" .
+            elif [[ "$DATA_ARCHIVE" == *.zst ]]; then
+              tar --zstd -cf "../$DATA_ARCHIVE" .
+            else
+              tar -czf "../$DATA_ARCHIVE" .
+            fi
             cd ..
             rm -rf data_content
             
-            tar -czf "$GITHUB_WORKSPACE/public/$PASSWALL_IPK" debian-binary control.tar.gz "$DATA_ARCHIVE"
+            # 重新打包成最终 IPK
+            tar -czf "$GITHUB_WORKSPACE/public/$PASSWALL_IPK" debian-binary control.tar.* "$DATA_ARCHIVE"
             
             cd $GITHUB_WORKSPACE
             rm -rf /tmp/ipk_extract
             echo "Passwall IPK 修改并重新打包完毕！"
           else
-            echo "提示：未找到包含 app.sh 的 Passwall IPK 包，跳过修改步骤。"
+            echo "提示：未找到包含 app.sh 的 Passwall IPK 包，请检查下载列表。"
           fi
 
       - name: Build Index (Perl)
