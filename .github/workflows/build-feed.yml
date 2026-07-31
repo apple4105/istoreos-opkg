@@ -162,19 +162,18 @@ jobs:
         run: |
           cd public
           
-          # 给 URL 加上双引号防截断，并用括号包裹保障容错
-          (
-            wget -q --timeout=10 "https://raw.githubusercontent.com/openwrt/openwrt/v22.03.5/scripts/opkg-make-index.pl" -O opkg-make-index.pl || \
-            wget -q --timeout=10 "https://git.openwrt.org/?p=openwrt/openwrt.git;a=blob_plain;f=scripts/opkg-make-index.pl;hb=v22.03.5" -O opkg-make-index.pl
-          ) || true
+          # 1. 下载脚本
+          curl -sSL "https://raw.githubusercontent.com/openwrt/openwrt/master/scripts/opkg-make-index.pl" -o opkg-make-index.pl || true
 
-          if [ -s opkg-make-index.pl ]; then
-            echo "Using opkg-make-index.pl to build Packages index..."
+          # 2. 严格校验：确保文件存在，且不是 HTML 网页
+          if [ -s opkg-make-index.pl ] && ! head -n 2 opkg-make-index.pl | grep -iq "html"; then
+            echo "Successfully fetched opkg-make-index.pl. Building Packages index..."
             chmod +x opkg-make-index.pl
             ./opkg-make-index.pl . > Packages
             rm -f opkg-make-index.pl
           else
-            echo "opkg-make-index.pl not found or empty, skipping Perl indexer."
+            echo "Downloaded file is invalid or an HTML page, skipping Perl indexer."
+            rm -f opkg-make-index.pl
           fi
 
       - name: Fallback Indexer (Python)
