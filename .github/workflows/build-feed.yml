@@ -145,7 +145,7 @@ jobs:
             if [ -f "$TARGET_FILE" ]; then
               echo "找到目标文件: $TARGET_FILE ，开始执行修改..."
               
-              # 修改 1：将 local RUN_NEW_DNSMASQ=0 改为 1
+              # 修改 1：将 local RUN_NEW_DNSMASQ=1 改为 0
               sed -i 's/local RUN_NEW_DNSMASQ=0/local RUN_NEW_DNSMASQ=1/g' "$TARGET_FILE"
               
               # 修改 2：给 RUN_NEW_DNSMASQ=${DNS_REDIRECT} 前面加 # 注释
