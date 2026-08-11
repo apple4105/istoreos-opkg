@@ -21,7 +21,8 @@ jobs:
       - name: Install dependencies and build usign
         run: |
           sudo apt-get update
-          sudo apt-get install -y perl python3 gzip wget jq unzip cmake build-essential file
+          sudo apt-get install -y ca-certificates perl python3 gzip wget jq unzip cmake build-essential file
+          git config --global http.sslVerify false
           
           git clone https://github.com/openwrt/usign.git /tmp/usign
           cd /tmp/usign && cmake . && make && sudo cp usign /usr/local/bin/
@@ -293,6 +294,8 @@ jobs:
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
+        env:
+          GIT_SSL_NO_VERIFY: "true"
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./public
