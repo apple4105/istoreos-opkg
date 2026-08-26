@@ -282,15 +282,19 @@ jobs:
             exit 1
           fi
 
-          printf "%s\n" "$OPKG_SECRET" | tr -d '\r' > secret.key
-          if ! grep -q "untrusted comment" secret.key; then
-            echo "untrusted comment: secret key" > temp.key
-            cat secret.key >> temp.key
-            mv temp.key secret.key
+          # 【优化点】：直接在系统的 /tmp 目录生成私钥，彻底与 public 发布目录物理隔离
+          printf "%s\n" "$OPKG_SECRET" | tr -d '\r' > /tmp/secret.key
+          if ! grep -q "untrusted comment" /tmp/secret.key; then
+            echo "untrusted comment: secret key" > /tmp/temp.key
+            cat /tmp/secret.key >> /tmp/temp.key
+            mv /tmp/temp.key /tmp/secret.key
           fi
 
-          usign -S -m Packages -s secret.key -x Packages.sig
-          rm -f secret.key
+          # 使用 /tmp/secret.key 完成签名
+          usign -S -m Packages -s /tmp/secret.key -x Packages.sig
+          
+          # 签名完立即抹除
+          rm -f /tmp/secret.key
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
