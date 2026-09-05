@@ -1,0 +1,60 @@
+Package: luci-app-passwall
+Version: 26.9.1-r1
+Depends: libc, coreutils, coreutils-base64, coreutils-nohup, coreutils-timeout, curl, chinadns-ng, dns2socks, dnsmasq-full, ip-full, libuci-lua, lua, luci-compat, luci-lib-jsonc, microsocks, resolveip, tcping, lyaml, luci-lua-runtime
+Source: /feed/luci-app-passwall
+SourceName: luci-app-passwall
+Section: luci
+SourceDateEpoch: 1788230458
+URL: https://github.com/openwrt/luci
+Maintainer: OpenWrt LuCI community
+Architecture: all
+Installed-Size: 3133440
+Description:  LuCI support for PassWall
+Filename: ./luci-app-passwall_26.9.1-r1_all.ipk
+Size: 848352
+MD5Sum: fbce16a0df0d907838302aaff68b4cba
+SHA256sum: 31725f246812cbb997234dcf71b959b9b6ed1a21bcb209d9bbfc0a56af44b062
+
+Package: luci-app-smartdns
+Version: 1.2026.08.05-0921
+Depends: libc, smartdns
+Source: feeds/luci/applications/luci-app-smartdns
+Section: luci
+Architecture: all
+Description:  A smartdns server
+Installed-Size: 131371
+Filename: ./luci-app-smartdns.1.2026.08.05-0921.all-luci-all.ipk
+Size: 18075
+MD5Sum: 49309d61b05b24f4078d1a3b93db1925
+SHA256sum: a339a6833c6b15692f992a946a8e831037ed06653f144ed478f4fd43d972bf49
+
+Package: luci-i18n-passwall-zh-cn
+Version: 26.9.1
+Depends: libc, luci-app-passwall
+Source: /feed/luci-app-passwall
+SourceName: luci-app-passwall
+Section: luci
+SourceDateEpoch: 1788230458
+Architecture: all
+Installed-Size: 51200
+Description:  Translation for luci-app-passwall - 简体中文 (Simplified Chinese)
+Filename: ./luci-i18n-passwall-zh-cn_26.9.1_all.ipk
+Size: 18195
+MD5Sum: 41c13a5b92d2299a88dc6ea773c26771
+SHA256sum: b19b6b356ca9a868232424b3a6305ad2342c3d7466c53c3826b6379fa84f8700
+
+Package: smartdns
+Architecture: all
+Priority: optional
+Section: net
+Version: 1.2026.08.05-0921
+Depends: libc, libopenssl, libpthread
+Maintainer: pymumu
+Source: http://127.0.0.1/
+Description: A smart dns server
+Enabled: yes
+Installed-Size: 20177163
+Filename: ./smartdns.1.2026.08.05-0921.x86_64-openwrt-all.ipk
+Size: 9442168
+MD5Sum: c2d716a42d938abc93a7cdc7e1ca37df
+SHA256sum: d82c17c7341c4f27b56bb9393be00d2678bda3fff4efd8aa17f599290e33de46
